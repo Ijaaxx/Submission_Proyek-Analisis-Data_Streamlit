@@ -14,7 +14,7 @@ st.set_page_config(
 # Mengatur gaya visualisasi Seaborn
 sns.set_style("whitegrid")
 
-# Fungsi untuk memuat data secara aman (baik dijalankan dari root maupun folder dashboard/)
+# Fungsi untuk memuat data secara aman
 @st.cache_data
 def load_data():
     possible_paths = [
@@ -55,7 +55,6 @@ def create_daily_df(df):
 # SIDEBAR FILTER INTERAKTIF
 # ==============================================================================
 with st.sidebar:
-    # Menambahkan logo Dicoding tepat di atas judul Bike Sharing
     st.image("https://github.com/dicodingacademy/assets/raw/main/logo.png")
     st.title("🚲 Bike Sharing")
     st.markdown("Filter rentang waktu dan kondisi musim di bawah ini untuk mengeksplorasi data penyewaan sepeda.")
@@ -119,13 +118,14 @@ with col_kpi4:
 st.markdown("---")
 
 # ==============================================================================
-# TAB NAVIGASI AGAR TAMPILAN RAPI & TERTATA
+# TAB NAVIGASI UTAMA (MENGGUNAKAN st.tabs)
 # ==============================================================================
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "1️⃣ Pengaruh Suhu (2012)",
     "2️⃣ Kecepatan Angin Jam Sibuk",
     "3️⃣ Cuaca di Akhir Pekan",
-    "4️⃣ Matriks Korelasi"
+    "4️⃣ Matriks Korelasi",
+    "5️⃣ Ringkasan Visual Kesimpulan"
 ])
 
 # ------------------------------------------------------------------------------
@@ -141,7 +141,7 @@ with tab1:
     df_2012 = filtered_day_df[filtered_day_df["yr"] == 1].copy()
 
     if df_2012.empty:
-        st.info("Data tahun 2012 tidak tersedia pada rentang tanggal yang dipilih. Silakan perluas filter tanggal hingga tahun 2012.")
+        st.info("Data tahun 2012 tidak tersedia pada rentang tanggal yang dipilih.")
     else:
         df_2012["temp_category"] = df_2012["temp"].apply(
             lambda x: "Suhu Tinggi (> 0.7)" if x > 0.7 else "Suhu Normal/Sejuk"
@@ -214,7 +214,6 @@ with tab2:
         )
         wind_rush_df = morning_rush.groupby(["hr", "wind_category"])["cnt"].mean().reset_index()
 
-        # Hitung rata-rata keseluruhan & persentase penurunan
         avg_normal = morning_rush[morning_rush["windspeed"] <= 0.3]["cnt"].mean()
         avg_high = morning_rush[morning_rush["windspeed"] > 0.3]["cnt"].mean()
 
@@ -361,6 +360,93 @@ with tab4:
 - **Kelembapan & Angin (`hum` & `windspeed`):** Memiliki korelasi negatif, yang menandakan udara terlalu lembap atau berangin cenderung menurunkan jumlah penyewa.
 - **Dominasi Pengguna (`registered`):** Berkorelasi sangat tinggi (0.95) dengan total penyewaan harian.
 """)
+
+# ------------------------------------------------------------------------------
+# TAB 5: RINGKASAN VISUAL KESIMPULAN (3 GRAFIK DALAM 1 FRAME)
+# ------------------------------------------------------------------------------
+with tab5:
+    st.subheader("5. Ringkasan Visualisasi Analisis Kuantitatif & Lanjutan")
+    st.markdown("Berikut adalah gabungan visualisasi dari 3 analisis utama yang disajikan dalam satu tampilan grid:")
+
+    # Menyiapkan data pendukung untuk 3 grafik kesimpulan
+    df_2012_v = filtered_day_df[filtered_day_df['yr'] == 1].copy()
+    df_2012_v['temp_category'] = df_2012_v['temp'].apply(lambda x: 'Suhu Tinggi (> 0.7)' if x > 0.7 else 'Suhu Normal/Sejuk')
+    p1_res = df_2012_v.groupby('temp_category')[['casual', 'registered', 'cnt']].mean().reset_index()
+
+    weekend_df_v = filtered_day_df[filtered_day_df['workingday'] == 0].copy()
+    p3_res = weekend_df_v.groupby('weathersit')[['casual', 'registered', 'cnt']].mean().reset_index()
+
+    # Segmentasi traffic harian untuk grafik ketiga
+    def cat_traffic(cnt):
+        if cnt > 5000:
+            return 'High Traffic (Ramai)'
+        elif cnt > 2500:
+            return 'Medium Traffic (Sedang)'
+        else:
+            return 'Low Traffic (Sepi)'
+            
+    filtered_day_df['traffic_category'] = filtered_day_df['cnt'].apply(cat_traffic)
+    adv_group = filtered_day_df.groupby('traffic_category').agg({
+        'temp': 'mean',
+        'hum': 'mean',
+        'windspeed': 'mean',
+        'cnt': ['count', 'mean', 'sum']
+    }).reset_index()
+
+    # Plot grid 2x2
+    fig, axes = plt.subplots(2, 2, figsize=(14, 11))
+
+    # 1. Suhu Tinggi 2012
+    sns.barplot(
+        data=p1_res, 
+        x='temp_category', 
+        y='cnt', 
+        hue='temp_category',
+        palette='Blues', 
+        legend=False,
+        ax=axes[0, 0]
+    )
+    axes[0, 0].set_title('Pengaruh Suhu Tinggi terhadap Penyewaan (2012)', fontsize=10, fontweight="bold")
+    axes[0, 0].set_xlabel('Kategori Suhu')
+    axes[0, 0].set_ylabel('Rata-rata Penyewaan')
+
+    # 2. Cuaca di Akhir Pekan
+    sns.barplot(
+        data=p3_res, 
+        x='weathersit', 
+        y='cnt', 
+        hue='weathersit',
+        palette='viridis', 
+        legend=False,
+        ax=axes[0, 1]
+    )
+    axes[0, 1].set_title('Penyewaan Berdasarkan Cuaca saat Akhir Pekan', fontsize=10, fontweight="bold")
+    axes[0, 1].set_xlabel('Kondisi Cuaca')
+    axes[0, 1].set_ylabel('Rata-rata Penyewaan')
+
+    # 3. Segmentasi Traffic
+    traffic_order = ['Low Traffic (Sepi)', 'Medium Traffic (Sedang)', 'High Traffic (Ramai)']
+    sns.barplot(
+        data=adv_group, 
+        x='traffic_category', 
+        y=('cnt', 'mean'), 
+        hue='traffic_category',
+        order=traffic_order, 
+        palette='Set2', 
+        legend=False,
+        ax=axes[1, 0]
+    )
+    axes[1, 0].set_title('Rata-rata Penyewaan Berdasarkan Kategori Traffic', fontsize=10, fontweight="bold")
+    axes[1, 0].set_xlabel('Kategori Traffic')
+    axes[1, 0].set_ylabel('Rata-rata Jumlah Penyewaan')
+    axes[1, 0].set_ylim(0, 7000)
+
+    # Hapus subplot kosong ke-4
+    fig.delaxes(axes[1, 1])
+
+    plt.tight_layout()
+    st.pyplot(fig)
+    plt.close(fig)
 
 # ==============================================================================
 # KESIMPULAN & REKOMENDASI AKSI
